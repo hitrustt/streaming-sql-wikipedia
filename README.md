@@ -1,18 +1,18 @@
-# Riverbed (https://riverbed.fly.dev/)
+# Riverbed (https://hitrustt.github.io/riverbed/)
 
-Riverbed is a streaming SQL engine for Wikipedia's live edit stream, built with Python, FastAPI, React, and TypeScript. It ingests every edit made across Wikimedia, keeps a rolling window in memory, and runs continuous SQL queries over it that update once a second in the browser.
+Riverbed is a live query tool for streaming data, built with React, TypeScript, and Web Workers. It connects to Wikipedia's public edit stream, keeps a rolling window of it in memory, and runs continuous SQL queries that update every second.
 
-The SQL engine is written from scratch. There is no database and no query library.
+The query engine is written from scratch: tokenizer, parser, planner, and executor. There is no database, no query library, and no backend server. Everything runs in the browser.
 
 ### Desktop
 
-![Riverbed](./docs/screenshot.png)
+![Riverbed](./public/screenshot.png)
 
 ## Features
 
 - Live SQL over a stream of 20–50 edits per second
-- Continuous queries that update as new edits arrive
-- One-click example questions, editable as SQL
+- Continuous queries that update as new records arrive
+- One-click example questions, each editable as SQL
 - Live feed of edits linking to the real articles
 
 ## Query Language
@@ -29,70 +29,62 @@ LIMIT 10
 WINDOW 5m
 ```
 
-Supports `WHERE`, `GROUP BY`, `ORDER BY`, `LIMIT`, `LIKE`, `IN`, `CASE WHEN`, and aliases. Aggregates are `count`, `count(distinct)`, `sum`, `avg`, `min`, `max`, `percentile`, and `top_k`.
+Supports `WHERE`, `GROUP BY`, `ORDER BY`, `LIMIT`, `LIKE`, `IN`, `IS NULL`, `CASE WHEN`, and aliases. Aggregates are `count`, `count(distinct)`, `sum`, `avg`, `min`, `max`, `percentile`, and `top_k`.
 
-`WINDOW 5m` sets the rolling window. Joins, subqueries, and `HAVING` are not supported.
+`WINDOW 5m` sets the rolling window, which is what makes a query continuous rather than a one-shot scan. Joins, subqueries, and `HAVING` are not supported.
 
 ## Running Locally
 
-Backend:
-
 ```bash
-cd server
-pip install -r requirements.txt
-python -m uvicorn riverbed.app:app --reload --port 8000
-```
-
-Frontend, in a second terminal:
-
-```bash
-cd web
 npm install
 npm run dev
 ```
 
-To build the frontend into the server and run it on one port:
+To preview the production build:
 
 ```bash
-cd web
 npm run build
-cd ../server
-python -m uvicorn riverbed.app:app --port 8000
+npm run preview
 ```
 
 Tests:
 
 ```bash
-cd server
-python -m pytest
+npm test
+```
+
+There is also an integration test that reads the real stream and runs every example query against it. It is excluded from `npm test` so a network failure can never break the build:
+
+```bash
+npx vitest run src/engine/live.integration.test.ts
 ```
 
 ## Deploying
 
-The Dockerfile builds the frontend and serves it from the Python process.
+Pushing to `main` builds and publishes to GitHub Pages via `.github/workflows/deploy.yml`. The workflow runs the tests first and stops the deploy if they fail.
 
-```bash
-fly deploy
-```
-
-Run one instance. The event buffer and the upstream connection live in process memory, so multiple workers would each open their own connection and return different results.
+Since there is no server, hosting is a static file server and nothing else.
 
 ## How It Works
 
 ```
-Wikimedia EventStreams (SSE)
-  -> ingest: reconnect, normalize, batch
-  -> store: columnar ring buffer, 30 min / 250k rows
+Wikimedia EventStreams (SSE)  ── browser connects directly
+  -> ingest: backfill, normalize, batch, reconnect
+  -> store: columnar ring buffer, 15 min / 80k rows
   -> sql: lexer, parser, planner, executor
-  -> websocket: only the rows that changed
+  -> UI: only the rows that changed
 ```
 
-Queries re-scan the window each tick rather than maintaining incremental aggregates. A full scan of a bounded window is simpler to get right, and takes tens of milliseconds.
+Everything above runs in a Web Worker. A grouped scan over tens of thousands of rows takes tens of milliseconds, which on the main thread would drop frames every tick and make typing feel sticky.
 
-Longer time ranges are answered from per-minute rollups using HyperLogLog for distinct counts, Count-Min for heavy hitters, and t-digest for percentiles. All three are implemented in `server/riverbed/sketches.py` and tested against exact values.
+Queries re-scan the window each tick instead of maintaining incremental aggregates. Incremental aggregation is where streaming engines hide their worst bugs (retraction when a window expires, out-of-order arrivals, aggregates like `min` that cannot be undone), and a full scan of a bounded window is simple to get right. Incrementality is applied where it is safe instead: the worker diffs each result against the last and sends only changed rows.
+
+Longer time ranges are answered from per-minute rollups using HyperLogLog for distinct counts, Count-Min for heavy hitters, and t-digest for percentiles. All three are in `src/engine/sketches.ts` and tested against exact values. They use a 32-bit hash rather than the usual 64-bit one, because JavaScript numbers hold 53 bits of integer precision and BigInt is far too slow for a per-row loop.
+
+The buffer is empty when the page loads, so the client replays the last 90 seconds on startup using the stream's `since` parameter. That is about 4 MB and a couple of seconds, and it means results are on screen almost immediately instead of after several minutes of waiting for the window to fill.
 
 ## Data
 
-[Wikimedia EventStreams](https://stream.wikimedia.org/v2/stream/recentchange), a public feed of every edit to every Wikimedia wiki.
+[Wikimedia EventStreams](https://stream.wikimedia.org/v2/stream/recentchange), a public feed of every edit to every Wikimedia wiki. It is served with `access-control-allow-origin: *`, which is why the browser can read it directly and the project needs no backend.
 
 About 58% of the stream is bots, and most of the rest is Wikidata and Commons rather than Wikipedia articles. The default views filter to `is_bot = false AND project = 'wikipedia' AND namespace = 0` so the results are readable. Bot activity is still queryable, and two of the example questions use the unfiltered stream.
