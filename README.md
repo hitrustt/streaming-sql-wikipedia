@@ -1,4 +1,4 @@
-# Riverbed (https://hitrustt.github.io/riverbed/)
+# Riverbed (https://hitrustt.github.io/streaming-sql-wikipedia/)
 
 Riverbed is a live query tool for streaming data, built with React, TypeScript, and Web Workers. It connects to Wikipedia's public edit stream, keeps a rolling window of it in memory, and runs continuous SQL queries that update every second.
 
@@ -61,7 +61,7 @@ npx vitest run src/engine/live.integration.test.ts
 
 ## Deploying
 
-Pushing to `main` builds and publishes to GitHub Pages via `.github/workflows/deploy.yml`. The workflow runs the tests first and stops the deploy if they fail.
+Pushing to `main` or `master` builds and publishes to GitHub Pages via `.github/workflows/deploy.yml`. The workflow runs the tests first and stops the deploy if they fail.
 
 Since there is no server, hosting is a static file server and nothing else.
 
