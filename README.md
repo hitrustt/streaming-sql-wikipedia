@@ -4,10 +4,6 @@ Riverbed is a live query tool for streaming data, built with React, TypeScript, 
 
 The query engine is written from scratch: tokenizer, parser, planner, and executor. There is no database, no query library, and no backend server. Everything runs in the browser.
 
-### Desktop
-
-![Riverbed](./public/screenshot.png)
-
 ## Features
 
 - Live SQL over a stream of 20–50 edits per second
