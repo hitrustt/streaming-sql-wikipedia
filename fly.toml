@@ -1,0 +1,42 @@
+# Deployment config for Fly.io.
+#
+# Chosen over a serverless host because Riverbed holds a persistent upstream
+# connection and an in-memory window: it needs a process that stays warm, not
+# one that spins up per request. `auto_stop_machines` is off for the same
+# reason -- a stopped machine means an empty buffer and a dead demo link.
+
+app = "riverbed"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8000"
+  LOG_LEVEL = "INFO"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    # WebSocket connections are long-lived, so the limit is about concurrent
+    # viewers rather than request throughput.
+    soft_limit = 180
+    hard_limit = 240
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "45s"
+  method = "GET"
+  path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # The ring buffer is the dominant consumer: ~250k rows of 15 columns.
+  memory = "1gb"
