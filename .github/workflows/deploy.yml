@@ -2,7 +2,9 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # Both, because GitHub's default branch name depends on when and how the
+    # repo was created; triggering on only one silently never runs.
+    branches: [main, master]
   # Lets the deployment be re-run from the Actions tab without a new commit.
   workflow_dispatch:
 
